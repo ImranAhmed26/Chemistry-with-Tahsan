@@ -35,11 +35,11 @@ export function Topbar() {
         <div className="hidden md:block" />
         <div className="flex items-center gap-3">
           <Image
-            src="/images/teacher-profile.jpg"
+            src="/images/teacher-logic.jpg"
             alt={tenant?.ownerName || "Teacher"}
             width={32}
             height={32}
-            className="rounded-full object-cover"
+            className="h-8 w-8 rounded-full object-cover"
           />
           <div className="hidden text-right sm:block">
             <p className="text-sm font-medium text-gray-900">{user?.name}</p>
