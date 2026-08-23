@@ -130,4 +130,4 @@ export const api = {
     apiRequest<T>(path, { method: "PUT", body, auth }),
   delete: <T>(path: string, auth = true) =>
     apiRequest<T>(path, { method: "DELETE", auth }),
-};
+}; 
