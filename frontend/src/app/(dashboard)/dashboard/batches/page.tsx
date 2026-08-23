@@ -13,7 +13,7 @@ import { useApiGet } from "@/lib/useApiGet";
 import { formatDate } from "@/lib/utils";
 import type { Batch, BatchStatus, Course, ListResponse } from "@/types";
 
-interface BatchFormState {
+interface BatchFormState { 
   courseId: string;
   name: string;
   schedule: string;
