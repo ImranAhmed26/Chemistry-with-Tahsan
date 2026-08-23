@@ -32,7 +32,7 @@ export const mockTenant: Tenant = {
   slug: "chemistry-with-tahsan",
   brandName: "Chemistry with Tahsan",
   ownerName: "MD. Manirul Islam Bhuyan (Tahsan)",
-  photoUrl: "/images/teacher-profile.jpg",
+  photoUrl: "/images/teacher-logic.jpg",
 };
 
 export const mockPublicTenant: PublicTenant = {
