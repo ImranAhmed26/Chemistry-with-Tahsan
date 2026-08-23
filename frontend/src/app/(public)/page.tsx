@@ -126,12 +126,12 @@ export default async function HomePage() {
           <div className="grid gap-10 md:grid-cols-3 md:items-start">
             <div className="md:col-span-1">
               <h2 className="text-xl font-semibold text-gray-900">What students say</h2>
-              <div className="relative mt-4 aspect-square w-full max-w-xs overflow-hidden rounded-xl">
+              <div className="relative mt-4 aspect-[1055/1491] w-full max-w-xs overflow-hidden rounded-xl">
                 <Image
                   src="/images/teacher-with-student.jpg"
-                  alt="Tahsan with a student"
+                  alt="Chemistry Handbook by Tahsan"
                   fill
-                  className="object-cover"
+                  className="object-contain"
                   sizes="320px"
                 />
               </div>
