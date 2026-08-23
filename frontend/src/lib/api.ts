@@ -1,7 +1,14 @@
 import type { ApiErrorBody } from "@/types";
+import { mockRequest } from "@/lib/mock/router";
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:4100/api";
+
+// Demo mode: routes every request to in-memory mock data instead of a real
+// backend, so the app can be shown to a client with no server/DB running.
+// Flip NEXT_PUBLIC_USE_MOCK_DATA=false in .env.local once the real API is
+// ready to wire up.
+const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
 const TOKEN_KEY = "cwt_token";
 
@@ -53,6 +60,17 @@ export async function apiRequest<T>(
   options: RequestOptions = {}
 ): Promise<T> {
   const { method = "GET", body, auth = true, query } = options;
+
+  if (USE_MOCK_DATA) {
+    try {
+      return await mockRequest<T>({ method, path, query, body, auth, token: getToken() });
+    } catch (err) {
+      if (err && typeof err === "object" && "statusCode" in err) {
+        throw new ApiError(err as ApiErrorBody, (err as { statusCode: number }).statusCode);
+      }
+      throw err;
+    }
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
