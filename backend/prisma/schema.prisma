@@ -1,0 +1,388 @@
+// Chemistry with Tahsan — Teacher/Student Management System
+// Multi-tenant data model: every teacher-owned resource carries a tenantId.
+// A "Tenant" represents one teacher's independent business/account. Today only
+// one Tenant (Tahsan) is seeded, but no code path may assume that stays true —
+// every query for tenant-owned data must be scoped by tenantId.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Tenant & Auth
+// ---------------------------------------------------------------------------
+
+// One Tenant = one independent teacher's account/brand (e.g. "Chemistry with Tahsan").
+// All teacher-owned data hangs off Tenant, never off User directly, so that a
+// tenant can later have more than one login (e.g. an assistant) without any
+// data model change.
+model Tenant {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  brandName   String
+  ownerName   String
+  bio         String?
+  photoUrl    String?
+  phone       String?
+  whatsapp    String?
+  email       String?
+  address     String?
+  facebookUrl String?
+  instagramUrl String?
+  youtubeUrl  String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users        User[]
+  students     Student[]
+  courses      Course[]
+  batches      Batch[]
+  enrollments  Enrollment[]
+  classSessions ClassSession[]
+  attendances  Attendance[]
+  resources    Resource[]
+  payments     Payment[]
+  studentNotes StudentNote[]
+
+  @@map("tenants")
+}
+
+enum UserRole {
+  OWNER
+  STAFF
+}
+
+// Login identity. Scoped to exactly one Tenant. Never trust a client-supplied
+// tenantId — it is always derived server-side from the authenticated User.
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(OWNER)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  studentNotes StudentNote[]
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Students
+// ---------------------------------------------------------------------------
+
+enum StudentStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model Student {
+  id             String        @id @default(cuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentCode    String
+  name           String
+  photoUrl       String?
+  phone          String?
+  whatsapp       String?
+  email          String?
+  parentName     String?
+  parentContact  String?
+  academicLevel  String?
+  examBoard      String?
+  notes          String?
+  status         StudentStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  enrollments    Enrollment[]
+  attendances    Attendance[]
+  payments       Payment[]
+  studentNotes   StudentNote[]
+
+  @@unique([tenantId, studentCode])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("students")
+}
+
+// Free-form dated notes about a student (separate from the single Student.notes
+// field so the teacher can keep a running, timestamped log per student).
+model StudentNote {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  authorUserId String?
+  authorUser   User?    @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  content      String
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([studentId])
+  @@map("student_notes")
+}
+
+// ---------------------------------------------------------------------------
+// Courses & Batches
+// ---------------------------------------------------------------------------
+
+enum CourseStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Course {
+  id            String       @id @default(cuid())
+  tenantId      String
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String
+  academicLevel String
+  examBoard     String?
+  description   String?
+  status        CourseStatus @default(ACTIVE)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  batches     Batch[]
+  enrollments Enrollment[]
+  resources   Resource[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("courses")
+}
+
+enum BatchStatus {
+  UPCOMING
+  ONGOING
+  COMPLETED
+  ARCHIVED
+}
+
+model Batch {
+  id        String      @id @default(cuid())
+  tenantId  String
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  name      String
+  schedule  String?
+  startDate DateTime?
+  endDate   DateTime?
+  capacity  Int?
+  status    BatchStatus @default(UPCOMING)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  enrollments   Enrollment[]
+  classSessions ClassSession[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([courseId])
+  @@map("batches")
+}
+
+// ---------------------------------------------------------------------------
+// Enrollment (student <-> batch, with history)
+// ---------------------------------------------------------------------------
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  WITHDRAWN
+}
+
+// A student may hold multiple enrollments over time (re-enrollment, batch
+// changes, multiple courses at once). Never store a course/batch id directly
+// on Student — always go through Enrollment so history is preserved.
+model Enrollment {
+  id         String           @id @default(cuid())
+  tenantId   String
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId  String
+  student    Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseId   String
+  course     Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  batchId    String
+  batch      Batch            @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  status     EnrollmentStatus @default(ACTIVE)
+  enrolledAt DateTime         @default(now())
+  endedAt    DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  attendances Attendance[]
+  payments    Payment[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([studentId])
+  @@index([batchId])
+  @@map("enrollments")
+}
+
+// ---------------------------------------------------------------------------
+// Class Sessions & Attendance
+// ---------------------------------------------------------------------------
+
+enum ClassSessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model ClassSession {
+  id        String              @id @default(cuid())
+  tenantId  String
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  batchId   String
+  batch     Batch               @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  date      DateTime
+  startTime String
+  endTime   String
+  topic     String?
+  notes     String?
+  status    ClassSessionStatus  @default(SCHEDULED)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  attendances Attendance[]
+
+  @@index([tenantId])
+  @@index([batchId])
+  @@index([tenantId, date])
+  @@map("class_sessions")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+model Attendance {
+  id             String           @id @default(cuid())
+  tenantId       String
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  classSessionId String
+  classSession   ClassSession     @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  enrollmentId   String?
+  enrollment     Enrollment?      @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
+  status         AttendanceStatus
+  markedAt       DateTime         @default(now())
+
+  @@unique([classSessionId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+  @@map("attendances")
+}
+
+// ---------------------------------------------------------------------------
+// Resources
+// ---------------------------------------------------------------------------
+
+enum ResourceType {
+  NOTES
+  PDF_BOOK
+  QUESTION_PAPER
+  REVISION_MAP
+  EXAM_PACK
+  RECORDED_LECTURE
+}
+
+enum ResourceVisibility {
+  PUBLIC
+  ENROLLED_ONLY
+  PRIVATE
+}
+
+enum ResourceStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model Resource {
+  id           String             @id @default(cuid())
+  tenantId     String
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  type         ResourceType
+  subject      String?
+  courseId     String?
+  course       Course?            @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  chapterTopic String?
+  fileUrl      String?
+  coverImageUrl String?
+  visibility   ResourceVisibility @default(PRIVATE)
+  price        Decimal?           @db.Decimal(10, 2)
+  status       ResourceStatus     @default(DRAFT)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([courseId])
+  @@map("resources")
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+enum PaymentMethod {
+  CASH
+  BKASH
+  NAGAD
+  BANK_TRANSFER
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+}
+
+model Payment {
+  id           String        @id @default(cuid())
+  tenantId     String
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  enrollmentId String?
+  enrollment   Enrollment?   @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
+  amount       Decimal       @db.Decimal(10, 2)
+  paidAmount   Decimal       @default(0) @db.Decimal(10, 2)
+  dueAmount    Decimal       @db.Decimal(10, 2)
+  paymentDate  DateTime?
+  method       PaymentMethod?
+  status       PaymentStatus @default(PENDING)
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([studentId])
+  @@map("payments")
+}
